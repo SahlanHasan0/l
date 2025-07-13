@@ -14,6 +14,10 @@
     <script src="https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js"></script>
     <!-- Typed.js for typing effect -->
     <script src="https://unpkg.com/typed.js@2.1.0/dist/typed.umd.js"></script>
+    <!-- Tone.js for audio feedback -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    <!-- Three.js for 3D elements -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
@@ -34,7 +38,7 @@
             const modalConfirmBtn = document.getElementById('custom-modal-confirm');
             const modalCancelBtn = document.getElementById('custom-modal-cancel');
 
-            modalMessage.textContent = message;
+            modalMessage.innerHTML = message; // Use innerHTML to allow for loading spinner
 
             if (type === 'confirm') {
                 modalConfirmBtn.style.display = 'inline-block';
@@ -46,6 +50,25 @@
                 modalCancelBtn.onclick = () => {
                     modalContainer.classList.remove('show-modal');
                     if (callback) callback(false);
+                };
+            } else if (type === 'prompt') { // Custom prompt type
+                const inputField = document.createElement('input');
+                inputField.type = 'text';
+                inputField.value = message; // Use message as initial value for prompt
+                inputField.style.cssText = 'width: 90%; padding: 10px; margin: 15px 0; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);';
+                modalMessage.innerHTML = ''; // Clear message to insert input
+                modalMessage.appendChild(document.createTextNode('Edit your post:'));
+                modalMessage.appendChild(inputField);
+
+                modalConfirmBtn.style.display = 'inline-block';
+                modalCancelBtn.style.display = 'inline-block';
+                modalConfirmBtn.onclick = () => {
+                    modalContainer.classList.remove('show-modal');
+                    if (callback) callback(inputField.value);
+                };
+                modalCancelBtn.onclick = () => {
+                    modalContainer.classList.remove('show-modal');
+                    if (callback) callback(null); // Return null on cancel
                 };
             } else { // 'alert' type
                 modalConfirmBtn.style.display = 'inline-block';
@@ -64,8 +87,8 @@
                 const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
 
                 if (Object.keys(firebaseConfig).length === 0) {
-                    console.error("Firebase config is missing. Community features will not work.");
-                    showCustomModal("Firebase configuration is missing. Community features will be disabled.", "alert");
+                    console.error("Firebase config is missing. Community and Insights features will not work.");
+                    window.showCustomModal("Firebase configuration is missing. Community and Insights features will be disabled.", "alert");
                     return;
                 }
 
@@ -91,20 +114,21 @@
                             }
                         } catch (error) {
                             console.error("Firebase authentication failed:", error);
-                            showCustomModal("Authentication failed. Community features might be limited.", "alert");
+                            window.showCustomModal("Authentication failed. Community and Insights features might be limited.", "alert");
                             window.currentUserId = crypto.randomUUID(); // Fallback to a random ID
                         }
                     }
                     window.isAuthReady = true;
-                    // Load posts only after auth state is resolved
+                    // Load posts and insights only after auth state is resolved
                     if (window.db && window.currentUserId) {
-                        window.loadPosts();
+                        window.loadCommunityPosts();
+                        window.loadInsights();
                     }
                 });
 
             } catch (error) {
                 console.error("Failed to initialize Firebase:", error);
-                showCustomModal("Failed to initialize Firebase. Community features will be disabled.", "alert");
+                window.showCustomModal("Failed to initialize Firebase. Community and Insights features will be disabled.", "alert");
             }
         });
     </script>
@@ -166,6 +190,21 @@
             color: var(--text-color);
         }
 
+        /* Loading Spinner */
+        .loading-spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid var(--accent-color);
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
         /* Keyframe for modal animation */
         @keyframes fadeInScale {
             from { opacity: 0; transform: scale(0.9); }
@@ -191,16 +230,18 @@
         
         /* CSS Variables and Base Styles */
         :root {
+            /* Cyberpunk Theme Colors (Reverted) */
             --bg-color: #1a1a1a;
             --text-color: #ffffff;
             --card-bg: #2a2a2a;
-            --accent-color: #00ff88;
-            --secondary-accent: #00aaff; /* New secondary accent */
+            --accent-color: #00ff88; /* Bright Green */
+            --secondary-accent: #00aaff; /* Bright Blue */
             --border-color: #444;
             --header-bg: rgba(0, 0, 0, 0.8);
             --glow-color: rgba(0, 255, 136, 0.5); /* Glow for accent */
         }
         .light-theme {
+            /* Light Theme (unchanged) */
             --bg-color: #ffffff;
             --text-color: #1a1a1a;
             --card-bg: #f0f0f0;
@@ -222,6 +263,32 @@
             line-height: 1.6;
             transition: background 0.3s, color 0.3s;
             overflow-x: hidden; /* Prevent horizontal scroll from particles */
+            cursor: none; /* Hide default cursor */
+        }
+
+        /* Custom Cursor */
+        #custom-cursor {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 20px;
+            height: 20px;
+            background: var(--accent-color);
+            border-radius: 50%;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            transition: width 0.2s ease, height 0.2s ease, background 0.2s ease, transform 0.1s ease;
+            z-index: 9999;
+            box-shadow: 0 0 15px var(--glow-color), 0 0 25px var(--accent-color);
+            opacity: 0.8;
+            mix-blend-mode: screen; /* Blends nicely with background */
+        }
+        #custom-cursor.hover-effect {
+            width: 40px;
+            height: 40px;
+            opacity: 0.6;
+            background: var(--secondary-accent);
+            box-shadow: 0 0 20px var(--secondary-accent), 0 0 30px var(--secondary-accent);
         }
 
         /* tsParticles container */
@@ -363,6 +430,71 @@
             animation: fadeIn 2s ease-in-out;
             text-shadow: 0 0 15px var(--glow-color), 0 0 25px var(--accent-color);
             z-index: 2; /* Above particles */
+            word-wrap: break-word; /* Ensure long words break */
+            white-space: normal; /* Allow text to wrap */
+        }
+        #hero h1 span#typed-text {
+            white-space: normal; /* Override Typed.js nowrap if it applies */
+            display: inline-block; /* Ensure it respects width for wrapping */
+        }
+        /* Glitch effect for headings (subtler version) */
+        .glitch-text {
+            position: relative;
+            animation: glitch-subtle 3s infinite alternate; /* Slower, alternating glitch */
+        }
+        .glitch-text::before,
+        .glitch-text::after {
+            content: attr(data-text);
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.7; /* Reduced opacity for subtlety */
+        }
+        .glitch-text::before {
+            left: 1px; /* Smaller offset */
+            text-shadow: -1px 0 var(--secondary-accent);
+            animation: glitch-left-subtle 3s infinite alternate;
+        }
+        .glitch-text::after {
+            left: -1px; /* Smaller offset */
+            text-shadow: 1px 0 var(--accent-color);
+            animation: glitch-right-subtle 3s infinite alternate;
+        }
+        @keyframes glitch-subtle {
+            0%, 100% { transform: translate(0); }
+            10% { transform: translate(-0.5px, 0.5px); }
+            30% { transform: translate(0.5px, -0.5px); }
+            50% { transform: translate(-0.5px, -0.5px); }
+            70% { transform: translate(0.5px, 0.5px); }
+            90% { transform: translate(-0.5px, 0.5px); }
+        }
+        @keyframes glitch-left-subtle {
+            0%, 100% { clip-path: inset(0 0 0 0); }
+            25% { clip-path: inset(0 0 75% 0); }
+            50% { clip-path: inset(0 0 0 0); }
+            75% { clip-path: inset(0 0 25% 0); }
+        }
+        @keyframes glitch-right-subtle {
+            0%, 100% { clip-path: inset(0 0 0 0); }
+            25% { clip-path: inset(0 0 25% 0); }
+            50% { clip-path: inset(0 0 0 0); }
+            75% { clip-path: inset(0 0 75% 0); }
+        }
+
+        /* AI Thought of the Day */
+        #ai-thought-container {
+            margin-top: 20px;
+            max-width: 600px;
+            font-style: italic;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 1.1rem;
+            min-height: 50px; /* Reserve space */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
         }
         #hero p {
             font-size: 1.3rem;
@@ -388,6 +520,17 @@
             opacity: 0.9;
             transform: translateY(-5px);
             box-shadow: 0 8px 20px rgba(0, 255, 136, 0.6);
+        }
+
+        /* Three.js Canvas */
+        #three-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0; /* Behind content, above tsParticles */
+            opacity: 0.1; /* Even more subtle overlay */
         }
 
         /* Main Content Container */
@@ -421,6 +564,28 @@
             z-index: 0;
             pointer-events: none;
         }
+
+        /* Animated Grid Overlay */
+        .section.grid-overlay::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: linear-gradient(to right, rgba(0, 255, 136, 0.05) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(0, 255, 136, 0.05) 1px, transparent 1px);
+            background-size: 30px 30px; /* Size of grid cells */
+            animation: gridMove 20s linear infinite;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.3;
+        }
+        @keyframes gridMove {
+            0% { background-position: 0 0; }
+            100% { background-position: 30px 30px; } /* Move by one grid cell size */
+        }
+
         .section h2 {
             font-family: 'Orbitron', sans-serif;
             color: var(--accent-color);
@@ -441,36 +606,63 @@
             height: 180px;
             border-radius: 50%;
             border: 5px solid var(--accent-color); /* Thicker border */
-            margin: -90px auto 20px auto; /* Adjusted for larger image */
+            /* Adjusted margin and added z-index to fix "half image" issue */
+            margin: -60px auto 20px auto; /* Reduced negative margin */
             display: block;
             transition: transform 0.4s ease, box-shadow 0.4s ease;
             box-shadow: 0 0 20px rgba(0, 255, 136, 0.6); /* Glow on image */
             object-fit: cover; /* Ensure image covers the area */
+            z-index: 10; /* Ensure it's above other elements if needed */
         }
         .profile-img:hover {
             transform: scale(1.15) rotate(5deg); /* More dynamic hover */
             box-shadow: 0 0 30px rgba(0, 255, 136, 0.8), 0 0 40px rgba(0, 170, 255, 0.5);
         }
-        /* List Styling */
-        .section ul {
-            list-style: none;
-            padding: 0;
-        }
-        .section ul li {
-            margin-bottom: 12px;
-            padding-left: 25px;
+
+        /* Skills Section - Visualized */
+        .skills-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
             position: relative;
-            font-size: 1.1rem;
+            z-index: 1;
         }
-        .section ul li::before {
-            content: '\2022'; /* Bullet point */
-            color: var(--accent-color);
-            font-size: 1.5rem;
-            position: absolute;
-            left: 0;
-            top: -2px;
-            line-height: 1;
-            text-shadow: 0 0 5px var(--glow-color);
+        .skill-item {
+            background: rgba(0,0,0,0.3);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .skill-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.4), 0 0 15px var(--glow-color);
+        }
+        .skill-name {
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin-bottom: 10px;
+            color: var(--secondary-accent);
+        }
+        .skill-bar-container {
+            width: 100%;
+            background: var(--border-color);
+            border-radius: 5px;
+            height: 10px;
+            overflow: hidden;
+        }
+        .skill-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-color), #00e67a);
+            width: 0%; /* Initial state for animation */
+            border-radius: 5px;
+            transition: width 1s ease-out; /* Animation */
+        }
+        .skill-item.animate .skill-bar {
+            width: var(--skill-level); /* Set by JS */
         }
 
         /* Download Resume Button */
@@ -493,6 +685,191 @@
             box-shadow: 0 8px 20px rgba(0, 255, 136, 0.6);
         }
 
+        /* Projects Section - Cards ENHANCED */
+        .projects-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 30px;
+            margin-top: 20px;
+            position: relative;
+            z-index: 1;
+        }
+        .project-card {
+            background: var(--card-bg); /* Use card-bg for a more solid base */
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+            cursor: pointer;
+            transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+            border: 1px solid var(--border-color);
+            position: relative; /* For pseudo-elements */
+            isolation: isolate; /* Ensures z-index for pseudo-elements */
+        }
+        /* Subtle background pattern for project cards */
+        .project-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: radial-gradient(circle at 10% 20%, rgba(0, 255, 136, 0.03) 0%, transparent 50%),
+                              radial-gradient(circle at 90% 80%, rgba(0, 170, 255, 0.03) 0%, transparent 50%);
+            background-size: 200% 200%;
+            background-position: center center;
+            opacity: 0.8;
+            z-index: -1; /* Behind content */
+        }
+
+        .project-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.5), 0 0 20px var(--glow-color);
+            border-color: var(--accent-color); /* Highlight border on hover */
+        }
+        .project-card img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            border-bottom: 1px solid var(--border-color);
+            transition: transform 0.3s ease, filter 0.3s ease; /* Add filter transition */
+            filter: grayscale(80%); /* Default grayscale */
+        }
+        .project-card:hover img {
+            transform: scale(1.05); /* Slight zoom on image hover */
+            filter: grayscale(0%); /* Full color on hover */
+        }
+        .project-card-content {
+            padding: 20px;
+            position: relative; /* Ensure content is above pseudo-elements */
+            z-index: 1;
+        }
+        .project-card h3 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--accent-color);
+            font-size: 1.5rem;
+            margin-top: 0;
+            margin-bottom: 10px;
+            text-shadow: 0 0 5px var(--glow-color);
+        }
+        .project-card p {
+            font-size: 0.95rem;
+            color: rgba(255, 255, 255, 0.8);
+        }
+        .project-card .view-details-btn {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 8px 15px;
+            background: var(--secondary-accent);
+            color: var(--bg-color);
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: background 0.3s, transform 0.3s;
+            box-shadow: 0 3px 8px rgba(0, 170, 255, 0.3);
+        }
+        .project-card .view-details-btn:hover {
+            background: #0088cc;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 12px rgba(0, 170, 255, 0.5);
+        }
+
+
+        /* Project Detail Modal */
+        .project-modal {
+            display: none;
+            position: fixed;
+            z-index: 2001; /* Above custom modal */
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(15px);
+            justify-content: center;
+            align-items: center;
+            opacity: 0; /* Start hidden for new animation */
+            transform: scale(0.9); /* Start scaled down for new animation */
+            transition: opacity 0.4s ease-out, transform 0.4s ease-out; /* Combined transition */
+        }
+        .project-modal.show-modal {
+            display: flex;
+            opacity: 1;
+            transform: scale(1);
+        }
+        .project-modal-content {
+            background: var(--card-bg);
+            margin: 50px auto;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 255, 136, 0.4), 0 0 50px rgba(0, 170, 255, 0.3);
+            max-width: 800px;
+            width: 90%;
+            position: relative;
+            animation: none; /* Remove old animation */
+            border: 2px solid var(--accent-color);
+            overflow-y: auto; /* Enable scrolling for long content */
+            max-height: 90vh; /* Limit height */
+        }
+        .project-modal-close {
+            position: absolute;
+            top: 20px;
+            right: 25px;
+            color: var(--text-color);
+            font-size: 2.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.3s, transform 0.3s;
+        }
+        .project-modal-close:hover {
+            color: var(--accent-color);
+            transform: rotate(90deg);
+        }
+        .project-modal-content h3 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--accent-color);
+            font-size: 2.2rem;
+            margin-top: 0;
+            margin-bottom: 15px;
+            text-shadow: 0 0 10px var(--glow-color);
+        }
+        .project-modal-content img {
+            max-width: 100%;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+        }
+        .project-modal-content p {
+            font-size: 1rem;
+            margin-bottom: 15px;
+            color: rgba(255, 255, 255, 0.9);
+        }
+        .project-modal-content .tech-stack span {
+            display: inline-block;
+            background: rgba(0, 255, 136, 0.2);
+            color: var(--accent-color);
+            padding: 5px 10px;
+            border-radius: 5px;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            border: 1px solid var(--accent-color);
+        }
+        .project-modal-content .modal-links a {
+            display: inline-block;
+            margin-right: 15px;
+            margin-top: 20px;
+            color: var(--secondary-accent);
+            text-decoration: none;
+            font-weight: 600;
+            transition: color 0.3s, text-shadow 0.3s;
+        }
+        .project-modal-content .modal-links a:hover {
+            color: var(--accent-color);
+            text-shadow: 0 0 5px var(--glow-color);
+        }
+
         /* Testimonials Section - Enhanced Slider */
         .testimonial-slider {
             position: relative;
@@ -501,6 +878,8 @@
             border-radius: 10px;
             background: rgba(0,0,0,0.2); /* Slightly darker background for slider */
             box-shadow: inset 0 0 15px rgba(0,0,0,0.3);
+            position: relative;
+            z-index: 1;
         }
         .testimonial-wrapper {
             display: flex;
@@ -552,8 +931,8 @@
             box-shadow: 0 0 8px var(--glow-color);
         }
 
-        /* Redesigned Community Feed */
-        .create-post {
+        /* Community Feed Section & Insights Section - Reused Styles */
+        .create-post, .create-insight {
             background: var(--card-bg);
             padding: 25px;
             border-radius: 15px;
@@ -561,9 +940,13 @@
             border: 2px dashed var(--accent-color);
             text-align: center;
             box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+            position: relative;
+            z-index: 1;
         }
         .create-post input[type="text"],
-        .create-post textarea {
+        .create-post textarea,
+        .create-insight input[type="text"],
+        .create-insight textarea {
             width: calc(100% - 24px); /* Adjust for padding */
             padding: 12px;
             margin: 10px 0;
@@ -576,16 +959,20 @@
             outline: none;
         }
         .create-post input[type="text"]:focus,
-        .create-post textarea:focus {
+        .create-post textarea:focus,
+        .create-insight input[type="text"]:focus,
+        .create-insight textarea:focus {
             border-color: var(--accent-color);
             box-shadow: 0 0 0 3px rgba(0, 255, 136, 0.2);
         }
-        .create-post input[type="file"] {
+        .create-post input[type="file"],
+        .create-insight input[type="file"] {
             display: none;
         }
         /* Redesigned File Label & Post Button */
         .file-label, 
-        #post-btn {
+        #post-btn,
+        #post-insight-btn {
             display: inline-block;
             padding: 12px 25px;
             background: linear-gradient(135deg, var(--accent-color), #00e67a);
@@ -601,14 +988,15 @@
             box-shadow: 0 4px 10px rgba(0, 255, 136, 0.3);
         }
         .file-label:hover, 
-        #post-btn:hover {
+        #post-btn:hover,
+        #post-insight-btn:hover {
             opacity: 0.9;
             transform: translateY(-3px);
             box-shadow: 0 6px 15px rgba(0, 255, 136, 0.5);
         }
 
-        /* Redesigned Post Icon UI for Action Buttons */
-        .post {
+        /* Post & Insight Post Icon UI for Action Buttons */
+        .post, .insight-post {
             background: var(--card-bg);
             padding: 25px;
             border-radius: 15px;
@@ -616,12 +1004,14 @@
             box-shadow: 0 5px 20px rgba(0,0,0,0.4);
             transition: transform 0.3s ease, box-shadow 0.3s ease;
             border: 1px solid var(--border-color);
+            position: relative;
+            z-index: 1;
         }
-        .post:hover {
+        .post:hover, .insight-post:hover {
             transform: translateY(-5px);
             box-shadow: 0 8px 25px rgba(0,0,0,0.6);
         }
-        .post header {
+        .post header, .insight-post header {
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -629,21 +1019,29 @@
             border-bottom: 1px dashed var(--border-color);
             padding-bottom: 10px;
         }
-        .post header strong {
+        .post header strong, .insight-post header strong {
             font-size: 1.2rem;
             color: var(--secondary-accent);
             text-shadow: 0 0 5px rgba(0, 170, 255, 0.3);
         }
-        .post header small {
+        .post header small, .insight-post header small {
             font-size: 0.9rem;
             color: #aaa;
         }
-        .post p {
+        .post p, .insight-post p {
             margin: 15px 0;
             font-size: 1.05rem;
             word-wrap: break-word; /* Ensure long words wrap */
         }
-        .post img {
+        .insight-post h3 { /* Specific for insight titles */
+            font-family: 'Orbitron', sans-serif;
+            color: var(--accent-color);
+            font-size: 1.8rem;
+            margin-top: 0;
+            margin-bottom: 10px;
+            text-shadow: 0 0 5px var(--glow-color);
+        }
+        .post img, .insight-post img {
             max-width: 100%;
             border-radius: 8px;
             margin: 15px 0;
@@ -651,14 +1049,14 @@
             object-fit: cover;
             height: auto; /* Ensure aspect ratio is maintained */
         }
-        .post-actions {
+        .post-actions, .insight-actions {
             display: flex;
             flex-wrap: wrap; /* Allow wrapping on small screens */
             gap: 10px;
             margin-top: 15px;
             justify-content: flex-start; /* Align to start */
         }
-        .post-actions button {
+        .post-actions button, .insight-actions button {
             background: linear-gradient(135deg, var(--accent-color), #00e67a);
             color: var(--bg-color);
             border: none;
@@ -672,15 +1070,15 @@
             transition: background 0.3s, transform 0.2s, box-shadow 0.3s;
             box-shadow: 0 3px 8px rgba(0, 255, 136, 0.2);
         }
-        .post-actions button:hover {
+        .post-actions button:hover, .insight-actions button:hover {
             background: #00d676;
             transform: translateY(-3px);
             box-shadow: 0 5px 12px rgba(0, 255, 136, 0.4);
         }
-        .post-actions button i {
+        .post-actions button i, .insight-actions button i {
             transition: transform 0.2s ease;
         }
-        .post-actions button:hover i {
+        .post-actions button:hover i, .insight-actions button:hover i {
             transform: scale(1.2);
         }
 
@@ -693,6 +1091,8 @@
             margin-top: 50px;
             border-radius: 10px 10px 0 0;
             box-shadow: 0 -4px 15px rgba(0,0,0,0.3);
+            position: relative;
+            z-index: 1;
         }
         footer p {
             margin: 0;
@@ -700,7 +1100,7 @@
             color: rgba(255, 255, 255, 0.7);
         }
 
-        /* Theme Toggle Button */
+        /* Theme Toggle Button ENHANCED */
         #theme-toggle {
             position: fixed;
             top: 80px;
@@ -711,16 +1111,49 @@
             border-radius: 50%;
             cursor: pointer;
             z-index: 1000;
-            transition: transform 0.3s, background 0.3s, box-shadow 0.3s;
+            transition: transform 0.3s, background 0.3s, box-shadow 0.3s, color 0.3s;
             font-size: 1.2rem;
             box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            display: flex; /* For centering icon */
+            justify-content: center;
+            align-items: center;
+        }
+        #theme-toggle i {
+            transition: transform 0.5s ease-in-out, color 0.3s ease, text-shadow 0.3s ease;
+            font-size: 1.2rem;
+            color: var(--text-color); /* Default icon color */
+            text-shadow: 0 0 5px rgba(255,255,255,0.3);
         }
         #theme-toggle:hover {
             transform: rotate(180deg) scale(1.1);
             background: var(--accent-color);
-            color: var(--bg-color);
             box-shadow: 0 6px 15px rgba(0, 255, 136, 0.4);
         }
+        #theme-toggle:hover i {
+            color: var(--bg-color); /* Icon color changes on button hover */
+            text-shadow: none;
+        }
+        /* Styles for light theme */
+        body.light-theme #theme-toggle i.fa-sun {
+            transform: rotate(0deg);
+            opacity: 1;
+        }
+        body.light-theme #theme-toggle i.fa-moon {
+            transform: rotate(-180deg);
+            opacity: 0;
+            position: absolute; /* Hide moon when sun is active */
+        }
+        /* Styles for dark theme */
+        body:not(.light-theme) #theme-toggle i.fa-sun {
+            transform: rotate(180deg);
+            opacity: 0;
+            position: absolute; /* Hide sun when moon is active */
+        }
+        body:not(.light-theme) #theme-toggle i.fa-moon {
+            transform: rotate(0deg);
+            opacity: 1;
+        }
+
 
         /* Back to Top Button */
         #back-to-top {
@@ -755,6 +1188,81 @@
             to { transform: translateY(0); opacity: 1; }
         }
 
+        /* Career Timeline */
+        .timeline {
+            position: relative;
+            padding: 20px 0;
+            list-style: none;
+            margin: 0;
+            position: relative;
+            z-index: 1;
+        }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 50%;
+            width: 2px;
+            background: var(--border-color);
+            transform: translateX(-50%);
+        }
+        .timeline-item {
+            display: flex;
+            margin-bottom: 40px;
+            position: relative;
+        }
+        .timeline-item:nth-child(odd) {
+            flex-direction: row-reverse;
+        }
+        .timeline-item-content {
+            background: rgba(0,0,0,0.3);
+            padding: 20px;
+            border-radius: 10px;
+            width: 45%;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            border: 1px solid var(--border-color);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            position: relative;
+            z-index: 1;
+        }
+        .timeline-item-content:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.4), 0 0 10px var(--glow-color);
+        }
+        .timeline-item-content h3 {
+            font-family: 'Orbitron', sans-serif;
+            color: var(--secondary-accent);
+            margin-top: 0;
+            font-size: 1.3rem;
+            text-shadow: 0 0 5px rgba(0, 170, 255, 0.3);
+        }
+        .timeline-item-content p {
+            font-size: 0.95rem;
+            color: rgba(255, 255, 255, 0.8);
+        }
+        .timeline-item-dot {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            background: var(--accent-color);
+            border-radius: 50%;
+            transform: translateX(-50%);
+            border: 3px solid var(--bg-color);
+            box-shadow: 0 0 10px var(--glow-color);
+            z-index: 2;
+        }
+        .timeline-item:nth-child(odd) .timeline-item-content {
+            margin-left: auto;
+            margin-right: calc(50% + 20px); /* Adjust for dot */
+        }
+        .timeline-item:nth-child(even) .timeline-item-content {
+            margin-right: auto;
+            margin-left: calc(50% + 20px); /* Adjust for dot */
+        }
+
         /* Responsive adjustments */
         @media screen and (max-width: 900px) {
             #hero h1 {
@@ -762,6 +1270,28 @@
             }
             .section h2 {
                 font-size: 2rem;
+            }
+            .projects-grid {
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            }
+        }
+        @media screen and (max-width: 768px) {
+            .timeline::before {
+                left: 20px;
+                transform: translateX(0);
+            }
+            .timeline-item {
+                flex-direction: column !important;
+                align-items: flex-start;
+            }
+            .timeline-item-content {
+                width: calc(100% - 60px); /* Adjust for padding and dot */
+                margin-left: 60px !important;
+                margin-right: 0 !important;
+            }
+            .timeline-item-dot {
+                left: 20px;
+                transform: translateX(0);
             }
         }
         @media screen and (max-width: 600px) {
@@ -783,16 +1313,22 @@
                 height: 120px;
                 margin: -60px auto 15px auto;
             }
-            .post-actions button {
+            .post-actions button, .insight-actions button {
                 padding: 8px 12px;
                 font-size: 0.85rem;
             }
-            .create-post, .post {
+            .create-post, .post, .create-insight, .insight-post {
                 padding: 15px;
             }
-            .file-label, #post-btn {
+            .file-label, #post-btn, #post-insight-btn {
                 padding: 10px 20px;
                 font-size: 0.9rem;
+            }
+            .skills-grid {
+                grid-template-columns: 1fr;
+            }
+            .project-modal-content {
+                padding: 20px;
             }
         }
     </style>
@@ -806,6 +1342,24 @@
             <button id="custom-modal-cancel">Cancel</button>
         </div>
     </div>
+
+    <!-- Project Detail Modal -->
+    <div id="project-detail-modal" class="project-modal">
+        <div class="project-modal-content">
+            <span class="project-modal-close">&times;</span>
+            <h3 id="modal-project-title"></h3>
+            <img id="modal-project-image" src="" alt="Project Image">
+            <p id="modal-project-description"></p>
+            <div class="tech-stack" id="modal-project-tech"></div>
+            <div class="modal-links">
+                <a id="modal-project-live" href="#" target="_blank"><i class="fas fa-external-link-alt"></i> Live Demo</a>
+                <a id="modal-project-github" href="#" target="_blank"><i class="fab fa-github"></i> GitHub Repo</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Cursor -->
+    <div id="custom-cursor"></div>
 
     <!-- Scroll Progress Bar -->
     <div id="progressContainer">
@@ -824,6 +1378,7 @@
                 <li><a href="#projects">Projects</a></li>
                 <li><a href="#testimonials">Testimonials</a></li>
                 <li><a href="#community">Community</a></li>
+                <li><a href="#insights">Insights</a></li> <!-- New nav item -->
                 <li><a href="#contact">Contact</a></li>
             </ul>
         </nav>
@@ -832,50 +1387,96 @@
     <!-- Hero Section -->
     <section id="hero">
         <div id="tsparticles"></div> <!-- Particle background container -->
-        <h1><span id="typed-text"></span></h1>
+        <canvas id="three-canvas"></canvas> <!-- Three.js 3D element container -->
+        <h1><span id="typed-text"></span></h1> <!-- Removed glitch-text class from h1 -->
         <p>I’m Sahlan Hasan – CEO &amp; Founder of NeuraFlow AI Pro. A tech enthusiast, web developer, and innovator shaping the future with creative solutions.</p>
+        <div id="ai-thought-container">
+            <div class="loading-spinner"></div>
+            <span id="ai-thought-text">Generating a futuristic thought...</span>
+        </div>
         <a href="#about" class="btn">Learn More</a>
     </section>
     
     <!-- Theme Toggle -->
-    <button id="theme-toggle">🌓</button>
+    <button id="theme-toggle">
+        <i class="fas fa-sun"></i>
+        <i class="fas fa-moon"></i>
+    </button>
+
+    <!-- Global Mute/Unmute Button -->
+    <button id="audio-toggle" style="position: fixed; bottom: 30px; left: 30px; z-index: 1000; background: var(--card-bg); border: 1px solid var(--border-color); padding: 10px; border-radius: 50%; cursor: pointer; transition: transform 0.3s, background 0.3s, box-shadow 0.3s; font-size: 1.2rem; color: var(--text-color); box-shadow: 0 4px 10px rgba(0,0,0,0.2);">
+        <i class="fas fa-volume-up"></i>
+    </button>
     
     <!-- Main Content Container -->
     <div class="container">
         <!-- About Section -->
-        <section class="section" id="about">
+        <section class="section grid-overlay" id="about">
             <img src="https://i.postimg.cc/Gh43Lv1z/PYUQSPU2-HRDB7-PFG7-BEEZ232-VE.avif" alt="Sahlan Hasan" class="profile-img">
             <h2>About Me</h2>
             <p>
                 Hi, I'm Sahlan Hasan, CEO &amp; Founder of NeuraFlow AI Pro. With a deep passion for technology and innovation, I've built a career bridging the gap between entrepreneurial vision and cutting-edge web development. My journey is defined by creativity, dedication, and the drive to create solutions that push boundaries—from modern web applications to pioneering AI-driven projects.
             </p>
+            <h3>My Journey</h3> <!-- Removed glitch-text class from My Journey h3 -->
+            <div class="timeline">
+                <div class="timeline-item">
+                    <div class="timeline-item-dot"></div>
+                    <div class="timeline-item-content">
+                        <h3>2020: Founding NeuraFlow AI Pro</h3>
+                        <p>Launched NeuraFlow AI Pro, a venture dedicated to exploring and applying artificial intelligence to real-world problems, focusing on web-based AI solutions.</p>
+                    </div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-item-dot"></div>
+                    <div class="timeline-item-content">
+                        <h3>2021: First Major Web AI Project</h3>
+                        <p>Successfully deployed an innovative AI-driven web application, demonstrating the practical integration of machine learning into user-facing platforms.</p>
+                    </div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-item-dot"></div>
+                    <div class="timeline-item-content">
+                        <h3>2022: Expanding into Decentralized Tech</h3>
+                        <p>Began exploring blockchain and Web3 technologies, integrating decentralized solutions into new projects and expanding the company's technical scope.</p>
+                    </div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-item-dot"></div>
+                    <div class="timeline-item-content">
+                        <h3>2023: Community & Open Source Initiatives</h3>
+                        <p>Fostered a vibrant online community, contributing to open-source projects and sharing knowledge to empower fellow developers and tech enthusiasts.</p>
+                    </div>
+                </div>
+                <div class="timeline-item">
+                    <div class="timeline-item-dot"></div>
+                    <div class="timeline-item-content">
+                        <h3>2024-Present: Pioneering Futuristic Solutions</h3>
+                        <p>Continuously pushing boundaries in AI, web development, and emerging technologies, focusing on creating immersive and highly interactive digital experiences.</p>
+                    </div>
+                </div>
+            </div>
             <a href="resume.pdf" class="btn-download" download>Download Resume</a>
         </section>
         
-        <!-- Skills Section -->
-        <section class="section" id="skills">
-            <h2>Skills</h2>
-            <ul>
-                <li>Tech Entrepreneurship</li>
-                <li>Full Stack Development</li>
-                <li>AI &amp; Machine Learning</li>
-                <li>Innovative Problem Solving</li>
-                <li>Responsive UI/UX Design</li>
-            </ul>
+        <!-- Skills Section - Enhanced -->
+        <section class="section grid-overlay" id="skills">
+            <h2 class="glitch-text" data-text="Skills">Skills</h2>
+            <div class="skills-grid">
+                <!-- Skills will be dynamically loaded/rendered here -->
+            </div>
         </section>
         
-        <!-- Projects Section -->
-        <section class="section" id="projects">
-            <h2>Projects</h2>
-            <div style="margin-top: 20px;">
-                <h3>NeuraFlow AI Pro</h3>
-                <p>CEO &amp; Founder – <a href="https://neuraflowaipro.github.io/NeuraFlowAi/" target="_blank" style="color: var(--accent-color);">Visit NeuraFlow AI Pro</a></p>
+        <!-- Projects Section - Enhanced -->
+        <section class="section grid-overlay" id="projects">
+            <h2 class="glitch-text" data-text="Projects">Projects</h2>
+            <div class="projects-grid">
+                <!-- Project cards will be dynamically loaded here -->
             </div>
         </section>
         
         <!-- Testimonials Section -->
-        <section class="section" id="testimonials">
-            <h2>Testimonials</h2>
+        <section class="section grid-overlay" id="testimonials">
+            <h2 class="glitch-text" data-text="Testimonials">Testimonials</h2>
             <div class="testimonial-slider">
                 <div class="testimonial-wrapper">
                     <div class="testimonial">
@@ -900,8 +1501,8 @@
         </section>
         
         <!-- Community Feed Section -->
-        <section class="section" id="community">
-            <h2>Community Feed</h2>
+        <section class="section grid-overlay" id="community">
+            <h2 class="glitch-text" data-text="Community Feed">Community Feed</h2>
             <p>Your User ID: <span id="user-id-display">Loading...</span></p>
             <div class="create-post">
                 <input type="text" id="username-input" placeholder="Your Name (optional)">
@@ -915,10 +1516,28 @@
                 <!-- Posts will be loaded here from Firestore -->
             </div>
         </section>
+
+        <!-- Insights Section - New & Firestore-backed -->
+        <section class="section grid-overlay" id="insights">
+            <h2 class="glitch-text" data-text="Insights & Articles">Insights & Articles</h2>
+            <p>Your User ID: <span id="user-id-display-insights">Loading...</span></p>
+            <div class="create-insight">
+                <input type="text" id="insight-title-input" placeholder="Insight Title">
+                <input type="text" id="insight-author-input" placeholder="Your Name (optional)">
+                <textarea id="insight-text" placeholder="Write your insight..."></textarea>
+                <br>
+                <label for="insight-image-upload" class="file-label"><i class="fa fa-upload"></i> Choose Image</label>
+                <input type="file" id="insight-image-upload" accept="image/*">
+                <button id="post-insight-btn">Publish Insight</button>
+            </div>
+            <div id="insights-list">
+                <!-- Insights will be loaded here from Firestore -->
+            </div>
+        </section>
         
         <!-- Contact Section -->
-        <section class="section" id="contact">
-            <h2>Contact</h2>
+        <section class="section grid-overlay" id="contact">
+            <h2 class="glitch-text" data-text="Contact">Contact</h2>
             <p>📧 <a href="mailto:sahlanhasan08@gmail.com" style="color: var(--accent-color);">sahlanhasan08@gmail.com</a></p>
             <p>Explore more: <a href="https://neuraflowaipro.github.io/NeuraFlowAi/" target="_blank" style="color: var(--accent-color);">NeuraFlow AI Pro Website</a></p>
         </section>
@@ -933,6 +1552,49 @@
     <button id="back-to-top">Back to Top</button>
     
     <script type="module">
+        // Global audio context and synth for sound effects
+        let audioEnabled = true;
+        let clickSynth = null;
+        let hoverSynth = null;
+
+        // Function to initialize Tone.js synths
+        async function initAudio() {
+            if (Tone.context.state !== 'running') {
+                await Tone.context.resume();
+            }
+            clickSynth = new Tone.MembraneSynth().toDestination();
+            hoverSynth = new Tone.Synth().toDestination();
+            console.log("Tone.js audio initialized.");
+        }
+
+        // Play a click sound
+        function playClickSound() {
+            if (audioEnabled && clickSynth) {
+                clickSynth.triggerAttackRelease("C4", "8n");
+            }
+        }
+
+        // Play a hover sound
+        function playHoverSound() {
+            if (audioEnabled && hoverSynth) {
+                hoverSynth.triggerAttackRelease("C5", "32n");
+            }
+        }
+
+        // Toggle audio
+        document.getElementById('audio-toggle').addEventListener('click', () => {
+            audioEnabled = !audioEnabled;
+            const icon = document.querySelector('#audio-toggle i');
+            if (audioEnabled) {
+                icon.classList.remove('fa-volume-mute');
+                icon.classList.add('fa-volume-up');
+                initAudio(); // Initialize audio context on first unmute
+            } else {
+                icon.classList.remove('fa-volume-up');
+                icon.classList.add('fa-volume-mute');
+            }
+        });
+
         // Ensure Firebase is initialized before proceeding with app logic that depends on it
         window.addEventListener('DOMContentLoaded', () => {
             // Wait for Firebase to be ready
@@ -941,9 +1603,31 @@
                     clearInterval(checkFirebaseReady);
                     console.log("Firebase is ready. Starting app logic.");
                     document.getElementById('user-id-display').textContent = window.currentUserId;
-                    // Initial load of posts is now triggered by onAuthStateChanged
+                    document.getElementById('user-id-display-insights').textContent = window.currentUserId;
+                    // Initial load of posts and insights is now triggered by onAuthStateChanged
+                    fetchAiThought(); // Fetch AI thought once Firebase is ready
                 }
             }, 100); // Check every 100ms
+
+            // Custom Cursor Logic
+            const customCursor = document.getElementById('custom-cursor');
+            document.addEventListener('mousemove', (e) => {
+                customCursor.style.left = `${e.clientX}px`;
+                customCursor.style.top = `${e.clientY}px`;
+            });
+
+            // Add hover effect for interactive elements and audio feedback
+            document.querySelectorAll('a, button, .project-card, .skill-item, .file-label, .slider-dot').forEach(el => {
+                el.addEventListener('mouseenter', () => {
+                    customCursor.classList.add('hover-effect');
+                    playHoverSound();
+                });
+                el.addEventListener('mouseleave', () => customCursor.classList.remove('hover-effect'));
+                el.addEventListener('click', () => playClickSound());
+            });
+
+            // Initialize Three.js scene on window load
+            initThreeJS();
         });
 
         // Scroll Progress Bar Update
@@ -963,8 +1647,39 @@
         
         // Theme Toggle
         const themeToggle = document.getElementById('theme-toggle');
+        const sunIcon = themeToggle.querySelector('.fa-sun');
+        const moonIcon = themeToggle.querySelector('.fa-moon');
+
+        // Set initial icon based on current theme
+        if (document.body.classList.contains('light-theme')) {
+            sunIcon.style.opacity = '1';
+            sunIcon.style.position = 'static';
+            moonIcon.style.opacity = '0';
+            moonIcon.style.position = 'absolute';
+        } else {
+            sunIcon.style.opacity = '0';
+            sunIcon.style.position = 'absolute';
+            moonIcon.style.opacity = '1';
+            moonIcon.style.position = 'static';
+        }
+
         themeToggle.addEventListener('click', () => {
             document.body.classList.toggle('light-theme');
+            if (document.body.classList.contains('light-theme')) {
+                sunIcon.style.transform = 'rotate(0deg)';
+                sunIcon.style.opacity = '1';
+                sunIcon.style.position = 'static';
+                moonIcon.style.transform = 'rotate(-180deg)';
+                moonIcon.style.opacity = '0';
+                moonIcon.style.position = 'absolute';
+            } else {
+                sunIcon.style.transform = 'rotate(180deg)';
+                sunIcon.style.opacity = '0';
+                sunIcon.style.position = 'absolute';
+                moonIcon.style.transform = 'rotate(0deg)';
+                moonIcon.style.opacity = '1';
+                moonIcon.style.position = 'static';
+            }
         });
         
         // Testimonials Slider
@@ -1010,16 +1725,168 @@
             });
         });
 
+        // Dynamic Skill Visualization
+        const skillsData = [
+            { name: "Tech Entrepreneurship", level: 90 },
+            { name: "Full Stack Development", level: 85 },
+            { name: "AI & Machine Learning", level: 75 },
+            { name: "Innovative Problem Solving", level: 95 },
+            { name: "Responsive UI/UX Design", level: 80 },
+            { name: "Cloud Platforms (Firebase)", level: 70 }
+        ];
+
+        function renderSkills() {
+            const skillsGrid = document.querySelector('.skills-grid');
+            skillsGrid.innerHTML = ''; // Clear existing skills
+            skillsData.forEach(skill => {
+                const skillItem = document.createElement('div');
+                skillItem.className = 'skill-item';
+                skillItem.innerHTML = `
+                    <div class="skill-name">${skill.name}</div>
+                    <div class="skill-bar-container">
+                        <div class="skill-bar" style="--skill-level: ${skill.level}%;"></div>
+                    </div>
+                `;
+                skillsGrid.appendChild(skillItem);
+            });
+        }
+
+        // Animate skill bars on scroll
+        const skillsSection = document.getElementById('skills');
+        const skillObserver = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    document.querySelectorAll('.skill-item .skill-bar').forEach(bar => {
+                        bar.style.width = bar.style.getPropertyValue('--skill-level');
+                    });
+                    observer.unobserve(entry.target); // Stop observing once animated
+                }
+            });
+        }, { threshold: 0.2 }); // Trigger when 20% of section is visible
+
+        skillObserver.observe(skillsSection);
+        renderSkills(); // Initial render of skills
+
+        // Project Data for Modal
+        const projectsData = [
+            {
+                id: 'neuraflow-ai-pro',
+                title: 'NeuraFlow AI Pro',
+                image: 'https://placehold.co/600x400/00ff88/1a1a1a?text=NeuraFlow+AI+Pro', // Placeholder image
+                description: 'As CEO & Founder, I led the development of NeuraFlow AI Pro, a cutting-edge platform designed to streamline AI model deployment and management. It features intuitive interfaces for data scientists and developers, enabling rapid prototyping and scaling of AI solutions. The project emphasizes user experience, robust backend infrastructure, and seamless integration with various machine learning frameworks.',
+                techStack: ['Python', 'TensorFlow', 'React', 'Node.js', 'Firebase', 'Docker'],
+                liveDemo: 'https://neuraflowaipro.github.io/NeuraFlowAi/',
+                githubRepo: 'https://github.com/neuraflowaipro/NeuraFlowAi' // Replace with actual repo if public
+            },
+            {
+                id: 'futuristic-portfolio',
+                title: 'Futuristic Portfolio Website',
+                image: 'https://placehold.co/600x400/00aaff/1a1a1a?text=Futuristic+Portfolio', // Placeholder image
+                description: 'This very website! A dynamic and interactive portfolio showcasing advanced web development techniques. Features include a particle background, typing animation, custom cursor, scroll-triggered animations, and a real-time community feed powered by Firestore. Designed for a unique and immersive user experience.',
+                techStack: ['HTML5', 'CSS3', 'JavaScript', 'tsParticles', 'Typed.js', 'Firebase Firestore'],
+                liveDemo: '#', // Current site
+                githubRepo: '#' // Link to your portfolio repo
+            },
+            {
+                id: 'blockchain-explorer',
+                title: 'Decentralized Blockchain Explorer',
+                image: 'https://placehold.co/600x400/ff00aa/1a1a1a?text=Blockchain+Explorer', // Placeholder image
+                description: 'Developed a lightweight, decentralized blockchain explorer that allows users to view transaction details, block information, and network statistics in real-time. Built with a focus on transparency and user privacy, utilizing Web3 technologies to interact directly with blockchain nodes.',
+                techStack: ['Solidity', 'Web3.js', 'React', 'Ethers.js', 'Node.js'],
+                liveDemo: 'https://example.com/blockchain-explorer', // Placeholder
+                githubRepo: 'https://github.com/your-username/blockchain-explorer' // Placeholder
+            }
+        ];
+
+        function renderProjects() {
+            const projectsGrid = document.querySelector('.projects-grid');
+            projectsGrid.innerHTML = '';
+            projectsData.forEach(project => {
+                const projectCard = document.createElement('div');
+                projectCard.className = 'project-card';
+                projectCard.dataset.projectId = project.id; // Store ID for modal lookup
+                projectCard.innerHTML = `
+                    <img src="${project.image}" alt="${project.title}">
+                    <div class="project-card-content">
+                        <h3>${project.title}</h3>
+                        <p>${project.description.substring(0, 100)}...</p>
+                        <a href="#" class="view-details-btn" data-id="${project.id}">View Details <i class="fas fa-arrow-right"></i></a>
+                    </div>
+                `;
+                projectsGrid.appendChild(projectCard);
+            });
+
+            // Add event listeners to project cards (now also for the button)
+            document.querySelectorAll('.project-card .view-details-btn').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    e.preventDefault(); // Prevent default link behavior
+                    e.stopPropagation(); // Stop event from bubbling to parent card
+                    const projectId = e.currentTarget.dataset.id;
+                    openProjectModal(projectId);
+                });
+            });
+
+             // Add event listener to the card itself for opening the modal
+             document.querySelectorAll('.project-card').forEach(card => {
+                card.addEventListener('click', (e) => {
+                    // Only open modal if click is not on the button
+                    if (!e.target.classList.contains('view-details-btn') && !e.target.closest('.view-details-btn')) {
+                        const projectId = card.dataset.projectId;
+                        openProjectModal(projectId);
+                    }
+                });
+            });
+        }
+
+        const projectModal = document.getElementById('project-detail-modal');
+        const modalCloseBtn = document.querySelector('.project-modal-close');
+
+        function openProjectModal(projectId) {
+            const project = projectsData.find(p => p.id === projectId);
+            if (!project) return;
+
+            document.getElementById('modal-project-title').textContent = project.title;
+            document.getElementById('modal-project-image').src = project.image;
+            document.getElementById('modal-project-image').alt = project.title;
+            document.getElementById('modal-project-description').textContent = project.description;
+
+            const techStackDiv = document.getElementById('modal-project-tech');
+            techStackDiv.innerHTML = '';
+            project.techStack.forEach(tech => {
+                const span = document.createElement('span');
+                span.textContent = tech;
+                techStackDiv.appendChild(span);
+            });
+
+            document.getElementById('modal-project-live').href = project.liveDemo;
+            document.getElementById('modal-project-github').href = project.githubRepo;
+
+            projectModal.classList.add('show-modal');
+        }
+
+        modalCloseBtn.addEventListener('click', () => {
+            projectModal.classList.remove('show-modal');
+        });
+
+        // Close modal if clicking outside content
+        projectModal.addEventListener('click', (e) => {
+            if (e.target === projectModal) {
+                projectModal.classList.remove('show-modal');
+            }
+        });
+
+        renderProjects(); // Initial render of projects
+
         // Community Feed System with Firestore
         // This function is now global and called after Firebase auth is ready
-        window.loadPosts = function() {
+        window.loadCommunityPosts = function() {
             if (!window.db || !window.currentUserId) {
-                console.log("Firestore not ready, cannot load posts.");
+                console.log("Firestore not ready for community posts, cannot load posts.");
                 return;
             }
 
             const postsContainer = document.getElementById('posts');
-            const postsCollectionRef = firebase.firestore.collection(window.db, `artifacts/${__app_id}/public/data/communityPosts`);
+            const postsCollectionRef = collection(window.db, `artifacts/${__app_id}/public/data/communityPosts`);
 
             onSnapshot(postsCollectionRef, (snapshot) => {
                 const fetchedPosts = [];
@@ -1029,7 +1896,6 @@
 
                 // Sort posts by timestamp in descending order (newest first)
                 fetchedPosts.sort((a, b) => {
-                    // Handle Firestore Timestamp objects and potential nulls
                     const timeA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime()) : 0;
                     const timeB = b.timestamp ? (b.timestamp.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime()) : 0;
                     return timeB - timeA;
@@ -1041,7 +1907,6 @@
                     postDiv.className = 'post';
                     const postDate = post.timestamp ? (post.timestamp.toDate ? post.timestamp.toDate().toLocaleString() : new Date(post.timestamp).toLocaleString()) : 'N/A';
                     
-                    // Check if the current user is the author of the post
                     const isAuthor = post.authorId === window.currentUserId;
 
                     postDiv.innerHTML = `
@@ -1067,16 +1932,16 @@
                     button.addEventListener('click', async (e) => {
                         const postId = e.currentTarget.dataset.id;
                         try {
-                            const postRef = firebase.firestore.doc(window.db, `artifacts/${__app_id}/public/data/communityPosts`, postId);
-                            const postDoc = await firebase.firestore.getDoc(postRef);
+                            const postRef = doc(window.db, `artifacts/${__app_id}/public/data/communityPosts`, postId);
+                            const postDoc = await getDoc(postRef);
                             if (postDoc.exists()) {
                                 const currentLikes = postDoc.data().likes || 0;
-                                await firebase.firestore.updateDoc(postRef, { likes: currentLikes + 1 });
+                                await updateDoc(postRef, { likes: currentLikes + 1 });
                                 console.log("Post liked!");
                             }
                         } catch (error) {
                             console.error("Error liking post:", error);
-                            showCustomModal("Failed to like post. Please try again.", "alert");
+                            window.showCustomModal("Failed to like post. Please try again.", "alert");
                         }
                     });
                 });
@@ -1087,11 +1952,11 @@
                         window.showCustomModal('Are you sure you want to delete this post?', 'confirm', async (result) => {
                             if (result) {
                                 try {
-                                    await firebase.firestore.deleteDoc(firebase.firestore.doc(window.db, `artifacts/${__app_id}/public/data/communityPosts`, postId));
+                                    await deleteDoc(doc(window.db, `artifacts/${__app_id}/public/data/communityPosts`, postId));
                                     console.log("Post deleted!");
                                 } catch (error) {
                                     console.error("Error deleting post:", error);
-                                    showCustomModal("Failed to delete post. Please try again.", "alert");
+                                    window.showCustomModal("Failed to delete post. Please try again.", "alert");
                                 }
                             }
                         });
@@ -1101,21 +1966,21 @@
                 postsContainer.querySelectorAll('.edit-btn').forEach(button => {
                     button.addEventListener('click', async (e) => {
                         const postId = e.currentTarget.dataset.id;
-                        const postRef = firebase.firestore.doc(window.db, `artifacts/${__app_id}/public/data/communityPosts`, postId);
-                        const postDoc = await firebase.firestore.getDoc(postRef);
+                        const postRef = doc(window.db, `artifacts/${__app_id}/public/data/communityPosts`, postId);
+                        const postDoc = await getDoc(postRef);
                         if (postDoc.exists()) {
                             const currentText = postDoc.data().text;
-                            window.showCustomModal('Edit your post:', 'prompt', (newText) => { // Using prompt-like modal
+                            window.showCustomModal(currentText, 'prompt', (newText) => { // Using prompt-like modal
                                 if (newText !== null && newText.trim() !== '') {
                                     try {
-                                        firebase.firestore.updateDoc(postRef, {
+                                        updateDoc(postRef, {
                                             text: newText,
-                                            timestamp: firebase.firestore.serverTimestamp() // Update timestamp on edit
+                                            timestamp: serverTimestamp() // Update timestamp on edit
                                         });
                                         console.log("Post updated!");
                                     } catch (error) {
                                         console.error("Error updating post:", error);
-                                        showCustomModal("Failed to update post. Please try again.", "alert");
+                                        window.showCustomModal("Failed to update post. Please try again.", "alert");
                                     }
                                 }
                             });
@@ -1126,23 +1991,22 @@
                 postsContainer.querySelectorAll('.share-btn').forEach(button => {
                     button.addEventListener('click', async (e) => {
                         const postId = e.currentTarget.dataset.id;
-                        const postRef = firebase.firestore.doc(window.db, `artifacts/${__app_id}/public/data/communityPosts`, postId);
-                        const postDoc = await firebase.firestore.getDoc(postRef);
+                        const postRef = doc(window.db, `artifacts/${__app_id}/public/data/communityPosts`, postId);
+                        const postDoc = await getDoc(postRef);
                         if (postDoc.exists()) {
                             const postData = postDoc.data();
                             const shareText = `Check out this post by ${postData.username || 'Anonymous'} on Sahlan's portfolio:\n"${postData.text}"\nPosted on: ${postData.timestamp ? (postData.timestamp.toDate ? postData.timestamp.toDate().toLocaleString() : new Date(postData.timestamp).toLocaleString()) : 'N/A'}`;
                             try {
-                                // Fallback for navigator.clipboard.writeText due to iframe restrictions
                                 const textArea = document.createElement("textarea");
                                 textArea.value = shareText;
                                 document.body.appendChild(textArea);
                                 textArea.select();
                                 document.execCommand('copy');
                                 textArea.remove();
-                                showCustomModal('Post copied to clipboard!', 'alert');
+                                window.showCustomModal('Post copied to clipboard!', 'alert');
                             } catch (err) {
                                 console.error('Failed to copy text:', err);
-                                showCustomModal('Failed to copy text. Please try manually.', 'alert');
+                                window.showCustomModal('Failed to copy text. Please try manually.', "alert");
                             }
                         }
                     });
@@ -1152,7 +2016,7 @@
 
         document.getElementById('post-btn').addEventListener('click', () => {
             if (!window.db || !window.currentUserId) {
-                showCustomModal("Community features are not available. Firebase not initialized.", "alert");
+                window.showCustomModal("Community features are not available. Firebase not initialized.", "alert");
                 return;
             }
 
@@ -1162,12 +2026,11 @@
             const file = imageInput.files[0];
 
             if (!text.trim() && !file) {
-                showCustomModal("Please enter some text or select an image to post.", "alert");
+                window.showCustomModal("Please enter some text or select an image to post.", "alert");
                 return;
             }
 
-            const loadingModalId = Date.now(); // Unique ID for this loading modal
-            showCustomModal('<div class="loading-spinner"></div> Posting...', 'alert'); // Show loading spinner
+            window.showCustomModal('<div class="loading-spinner"></div> Posting...', 'alert'); // Show loading spinner
 
             const reader = new FileReader();
             reader.onload = async function(e) {
@@ -1176,22 +2039,185 @@
                     text: text,
                     image: file ? e.target.result : null,
                     likes: 0,
-                    timestamp: firebase.firestore.serverTimestamp(), // Use server timestamp
+                    timestamp: serverTimestamp(),
                     userId: window.currentUserId, // Store the user ID
                     authorId: window.currentUserId // Store the author's UID for edit/delete checks
                 };
                 
                 try {
-                    const docRef = await firebase.firestore.addDoc(firebase.firestore.collection(window.db, `artifacts/${__app_id}/public/data/communityPosts`), newPost);
+                    const docRef = await addDoc(collection(window.db, `artifacts/${__app_id}/public/data/communityPosts`), newPost);
                     console.log("Document written with ID: ", docRef.id);
                     document.getElementById('post-text').value = '';
                     imageInput.value = '';
                     document.getElementById('username-input').value = '';
-                    // No need to call loadPosts() explicitly, onSnapshot will handle it
-                    showCustomModal("Post created successfully!", "alert"); // Replace loading modal with success
+                    window.showCustomModal("Post created successfully!", "alert");
                 } catch (e) {
                     console.error("Error adding document: ", e);
-                    showCustomModal("Error creating post. Please try again.", "alert");
+                    window.showCustomModal("Error creating post. Please try again.", "alert");
+                }
+            };
+            file ? reader.readAsDataURL(file) : reader.onload();
+        });
+
+        // Insights Section Logic (Firestore-backed)
+        window.loadInsights = function() {
+            if (!window.db || !window.currentUserId) {
+                console.log("Firestore not ready for insights, cannot load insights.");
+                return;
+            }
+
+            const insightsListContainer = document.getElementById('insights-list');
+            const insightsCollectionRef = collection(window.db, `artifacts/${__app_id}/public/data/insights`);
+
+            onSnapshot(insightsCollectionRef, (snapshot) => {
+                const fetchedInsights = [];
+                snapshot.forEach(doc => {
+                    fetchedInsights.push({ id: doc.id, ...doc.data() });
+                });
+
+                // Sort insights by timestamp in descending order (newest first)
+                fetchedInsights.sort((a, b) => {
+                    const timeA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime()) : 0;
+                    const timeB = b.timestamp ? (b.timestamp.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime()) : 0;
+                    return timeB - timeA;
+                });
+
+                insightsListContainer.innerHTML = ''; // Clear existing insights
+                fetchedInsights.forEach(insight => {
+                    const insightDiv = document.createElement('div');
+                    insightDiv.className = 'insight-post';
+                    const insightDate = insight.timestamp ? (insight.timestamp.toDate ? insight.timestamp.toDate().toLocaleString() : new Date(insight.timestamp).toLocaleString()) : 'N/A';
+                    
+                    const isAuthor = insight.authorId === window.currentUserId;
+
+                    insightDiv.innerHTML = `
+                        <header>
+                            <strong>${insight.title}</strong>
+                            <small>${insight.author || "Anonymous"} | ${insightDate}</small>
+                        </header>
+                        <p>${insight.text}</p>
+                        ${insight.image ? `<img src="${insight.image}" alt="Insight image">` : ''}
+                        <div class="insight-actions">
+                            ${isAuthor ? `<button class="edit-insight-btn" data-id="${insight.id}"><i class="fa fa-edit"></i> Edit</button>` : ''}
+                            <button class="share-insight-btn" data-id="${insight.id}"><i class="fa fa-share"></i> Share</button>
+                            ${isAuthor ? `<button class="delete-insight-btn" data-id="${insight.id}"><i class="fa fa-trash"></i> Delete</button>` : ''}
+                        </div>
+                    `;
+                    
+                    insightsListContainer.appendChild(insightDiv);
+                });
+
+                // Attach event listeners for Insights
+                insightsListContainer.querySelectorAll('.delete-insight-btn').forEach(button => {
+                    button.addEventListener('click', (e) => {
+                        const insightId = e.currentTarget.dataset.id;
+                        window.showCustomModal('Are you sure you want to delete this insight?', 'confirm', async (result) => {
+                            if (result) {
+                                try {
+                                    await deleteDoc(doc(window.db, `artifacts/${__app_id}/public/data/insights`, insightId));
+                                    console.log("Insight deleted!");
+                                } catch (error) {
+                                    console.error("Error deleting insight:", error);
+                                    window.showCustomModal("Failed to delete insight. Please try again.", "alert");
+                                }
+                            }
+                        });
+                    });
+                });
+
+                insightsListContainer.querySelectorAll('.edit-insight-btn').forEach(button => {
+                    button.addEventListener('click', async (e) => {
+                        const insightId = e.currentTarget.dataset.id;
+                        const insightRef = doc(window.db, `artifacts/${__app_id}/public/data/insights`, insightId);
+                        const insightDoc = await getDoc(insightRef);
+                        if (insightDoc.exists()) {
+                            const currentText = insightDoc.data().text;
+                            window.showCustomModal(currentText, 'prompt', (newText) => {
+                                if (newText !== null && newText.trim() !== '') {
+                                    try {
+                                        updateDoc(insightRef, {
+                                            text: newText,
+                                            timestamp: serverTimestamp()
+                                        });
+                                        console.log("Insight updated!");
+                                    } catch (error) {
+                                        console.error("Error updating insight:", error);
+                                        window.showCustomModal("Failed to update insight. Please try again.", "alert");
+                                    }
+                                }
+                            });
+                        }
+                    });
+                });
+
+                insightsListContainer.querySelectorAll('.share-insight-btn').forEach(button => {
+                    button.addEventListener('click', async (e) => {
+                        const insightId = e.currentTarget.dataset.id;
+                        const insightRef = doc(window.db, `artifacts/${__app_id}/public/data/insights`, insightId);
+                        const insightDoc = await getDoc(insightRef);
+                        if (insightDoc.exists()) {
+                            const insightData = insightDoc.data();
+                            const shareText = `Check out this insight by ${insightData.author || 'Anonymous'} on Sahlan's portfolio:\n"${insightData.title}"\n"${insightData.text}"\nPublished on: ${insightData.timestamp ? (insightData.timestamp.toDate ? insightData.toDate().toLocaleString() : new Date(insightData.timestamp).toLocaleString()) : 'N/A'}`;
+                            try {
+                                const textArea = document.createElement("textarea");
+                                textArea.value = shareText;
+                                document.body.appendChild(textArea);
+                                textArea.select();
+                                document.execCommand('copy');
+                                textArea.remove();
+                                window.showCustomModal('Insight copied to clipboard!', 'alert');
+                            } catch (err) {
+                                console.error('Failed to copy text:', err);
+                                window.showCustomModal('Failed to copy text. Please try manually.', "alert");
+                            }
+                        }
+                    });
+                });
+            });
+        };
+
+        document.getElementById('post-insight-btn').addEventListener('click', () => {
+            if (!window.db || !window.currentUserId) {
+                window.showCustomModal("Insights features are not available. Firebase not initialized.", "alert");
+                return;
+            }
+
+            const title = document.getElementById('insight-title-input').value.trim();
+            const author = document.getElementById('insight-author-input').value || "Anonymous";
+            const text = document.getElementById('insight-text').value.trim();
+            const imageInput = document.getElementById('insight-image-upload');
+            const file = imageInput.files[0];
+
+            if (!title || (!text && !file)) {
+                window.showCustomModal("Please enter a title and some text or select an image for your insight.", "alert");
+                return;
+            }
+
+            window.showCustomModal('<div class="loading-spinner"></div> Publishing Insight...', 'alert');
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                const newInsight = {
+                    title: title,
+                    author: author,
+                    text: text,
+                    image: file ? e.target.result : null,
+                    timestamp: serverTimestamp(),
+                    userId: window.currentUserId,
+                    authorId: window.currentUserId
+                };
+                
+                try {
+                    const docRef = await addDoc(collection(window.db, `artifacts/${__app_id}/public/data/insights`), newInsight);
+                    console.log("Insight written with ID: ", docRef.id);
+                    document.getElementById('insight-title-input').value = '';
+                    document.getElementById('insight-author-input').value = '';
+                    document.getElementById('insight-text').value = '';
+                    imageInput.value = '';
+                    window.showCustomModal("Insight published successfully!", "alert");
+                } catch (e) {
+                    console.error("Error adding insight: ", e);
+                    window.showCustomModal("Error publishing insight. Please try again.", "alert");
                 }
             };
             file ? reader.readAsDataURL(file) : reader.onload();
@@ -1240,7 +2266,7 @@
                 },
                 particles: {
                     color: {
-                        value: ["#00ff88", "#00aaff", "#ffffff"], // Multiple colors for particles
+                        value: ["#00ff88", "#00aaff", "#ffffff"], // Cyberpunk colors for particles
                     },
                     links: {
                         color: "#ffffff",
@@ -1288,7 +2314,44 @@
             loop: true,
             showCursor: true,
             cursorChar: '|',
+            onComplete: (self) => {
+                // No glitch effect added to h1 after typing
+            }
         });
+
+        // Fetch AI Thought of the Day
+        async function fetchAiThought() {
+            const aiThoughtTextElement = document.getElementById('ai-thought-text');
+            const aiThoughtContainer = document.getElementById('ai-thought-container');
+            aiThoughtContainer.innerHTML = '<div class="loading-spinner"></div> <span id="ai-thought-text">Generating a futuristic thought...</span>';
+
+            let chatHistory = [];
+            chatHistory.push({ role: "user", parts: [{ text: "Generate a short, inspiring, and futuristic thought or quote (max 20 words) about technology, innovation, or the future, suitable for a personal portfolio website. Do not include any introductory or concluding phrases like 'Here is a thought:' or 'Quote:'." }] });
+            const payload = { contents: chatHistory };
+            const apiKey = ""; // If you want to use models other than gemini-2.0-flash or imagen-3.0-generate-002, provide an API key here. Otherwise, leave this as-is.
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    aiThoughtContainer.innerHTML = `<span id="ai-thought-text">"${text}"</span>`;
+                } else {
+                    aiThoughtContainer.innerHTML = '<span id="ai-thought-text">"Innovation lights the path to tomorrow."</span>'; // Fallback
+                    console.error("AI thought generation failed: Unexpected response structure.");
+                }
+            } catch (error) {
+                aiThoughtContainer.innerHTML = '<span id="ai-thought-text">"The future is built on bold ideas."</span>'; // Fallback
+                console.error("Error fetching AI thought:", error);
+            }
+        }
 
         // Intersection Observer for section animations
         const sections = document.querySelectorAll('.section');
@@ -1303,7 +2366,8 @@
                 if (entry.isIntersecting) {
                     entry.target.style.opacity = '1';
                     entry.target.style.transform = 'translateY(0)';
-                    observer.unobserve(entry.target); // Stop observing once animated
+                    // Apply glitch effect to h2 when section comes into view (already handled by class in HTML)
+                    // Removed the dynamic addition of glitch-text to h2 here as it's now in HTML
                 }
             });
         }, observerOptions);
@@ -1312,6 +2376,144 @@
             sectionObserver.observe(section);
         });
 
+        // Three.js Scene Setup and Animation
+        let scene, camera, renderer, dodecahedron;
+
+        function initThreeJS() {
+            const canvas = document.getElementById('three-canvas');
+            const heroSection = document.getElementById('hero');
+
+            // Scene setup
+            scene = new THREE.Scene();
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, heroSection.clientWidth / heroSection.clientHeight, 0.1, 1000);
+            camera.position.z = 2;
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+            renderer.setSize(heroSection.clientWidth, heroSection.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+
+            // Geometry (Dodecahedron)
+            const geometry = new THREE.DodecahedronGeometry(0.8); // Size of the dodecahedron
+            // Material with glowing effect
+            const material = new THREE.MeshPhongMaterial({
+                color: 0x00ff88, // Accent color (Bright Green)
+                emissive: 0x00ff88, // Emissive color for glow (Bright Green)
+                emissiveIntensity: 0.3, // Reduced intensity of the glow
+                specular: 0x00aaff, // Specular highlight color (Bright Blue)
+                shininess: 100, // Shininess of the material
+                transparent: true,
+                opacity: 0.6 // Reduced opacity
+            });
+
+            dodecahedron = new THREE.Mesh(geometry, material);
+            scene.add(dodecahedron);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0x404040, 2); // soft white light
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(1, 1, 1).normalize();
+            scene.add(directionalLight);
+
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize, false);
+
+            animateThreeJS(); // Start the animation loop
+        }
+
+        function onWindowResize() {
+            const heroSection = document.getElementById('hero');
+            camera.aspect = heroSection.clientWidth / heroSection.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(heroSection.clientWidth, heroSection.clientHeight);
+        }
+
+        function animateThreeJS() {
+            requestAnimationFrame(animateThreeJS);
+
+            // Rotate the dodecahedron
+            if (dodecahedron) {
+                dodecahedron.rotation.x += 0.005;
+                dodecahedron.rotation.y += 0.005;
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        // PWA Service Worker Registration
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+        }
+    </script>
+
+    <!-- Embedded Service Worker Script -->
+    <script id="service-worker-script">
+        // This script will be dynamically converted into service-worker.js
+        // It's placed here for easy embedding within the single HTML file.
+        if (typeof ServiceWorkerGlobalScope !== 'undefined') {
+            self.addEventListener('install', (event) => {
+                event.waitUntil(
+                    caches.open('futuristic-portfolio-cache-v1').then((cache) => {
+                        return cache.addAll([
+                            '/',
+                            '/index.html',
+                            'https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&family=Orbitron:wght@400;600;700&display=swap',
+                            'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css',
+                            'https://cdn.jsdelivr.net/npm/tsparticles@2.12.0/tsparticles.bundle.min.js',
+                            'https://unpkg.com/typed.js@2.1.0/dist/typed.umd.js',
+                            'https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js',
+                            'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+                            'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js',
+                            'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js',
+                            'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js',
+                            'https://i.postimg.cc/Gh43Lv1z/PYUQSPU2-HRDB7-PFG7-BEEZ232-VE.avif', // Profile image
+                            'https://placehold.co/600x400/00ff88/1a1a1a?text=NeuraFlow+AI+Pro', // Placeholder images
+                            'https://placehold.co/600x400/00aaff/1a1a1a?text=Futuristic+Portfolio',
+                            'https://placehold.co/600x400/ff00aa/1a1a1a?text=Blockchain+Explorer'
+                            // Add other static assets like 'resume.pdf' if applicable
+                        ]);
+                    })
+                );
+            });
+
+            self.addEventListener('fetch', (event) => {
+                event.respondWith(
+                    caches.match(event.request).then((response) => {
+                        return response || fetch(event.request);
+                    })
+                );
+            });
+        }
+
+        // This part registers the service worker from the embedded script
+        // It creates a Blob from the script content and registers it.
+        const swScriptContent = document.getElementById('service-worker-script').textContent;
+        const swBlob = new Blob([swScriptContent], { type: 'application/javascript' });
+        const swUrl = URL.createObjectURL(swBlob);
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register(swUrl)
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+        }
     </script>
 </body>
 </html>
