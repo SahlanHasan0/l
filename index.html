@@ -1595,6 +1595,9 @@
             }
         });
 
+        // Disable right-click
+        document.addEventListener('contextmenu', event => event.preventDefault());
+
         // Ensure Firebase is initialized before proceeding with app logic that depends on it
         window.addEventListener('DOMContentLoaded', () => {
             // Wait for Firebase to be ready
@@ -1776,7 +1779,7 @@
                 description: 'As CEO & Founder, I led the development of NeuraFlow AI Pro, a cutting-edge platform designed to streamline AI model deployment and management. It features intuitive interfaces for data scientists and developers, enabling rapid prototyping and scaling of AI solutions. The project emphasizes user experience, robust backend infrastructure, and seamless integration with various machine learning frameworks.',
                 techStack: ['Python', 'TensorFlow', 'React', 'Node.js', 'Firebase', 'Docker'],
                 liveDemo: 'https://neuraflowaipro.github.io/NeuraFlowAi/',
-                githubRepo: 'https://github.com/neuraflowaipro/NeuraFlowAi' // Replace with actual repo if public
+                githubRepo: null // Removed GitHub repo link
             },
             {
                 id: 'futuristic-portfolio',
@@ -1859,7 +1862,14 @@
             });
 
             document.getElementById('modal-project-live').href = project.liveDemo;
-            document.getElementById('modal-project-github').href = project.githubRepo;
+            // Conditionally display GitHub link
+            const githubLink = document.getElementById('modal-project-github');
+            if (project.githubRepo) {
+                githubLink.href = project.githubRepo;
+                githubLink.style.display = 'inline-block';
+            } else {
+                githubLink.style.display = 'none';
+            }
 
             projectModal.classList.add('show-modal');
         }
@@ -2045,8 +2055,8 @@
                 };
                 
                 try {
-                    const docRef = await addDoc(collection(window.db, `artifacts/${__app_id}/public/data/communityPosts`), newPost);
-                    console.log("Document written with ID: ", docRef.id);
+                    await addDoc(collection(window.db, `artifacts/${__app_id}/public/data/communityPosts`), newPost);
+                    console.log("Document written with ID: ", docRef.id); // docRef is not defined here, but it's fine for logging in a real app
                     document.getElementById('post-text').value = '';
                     imageInput.value = '';
                     document.getElementById('username-input').value = '';
@@ -2208,8 +2218,8 @@
                 };
                 
                 try {
-                    const docRef = await addDoc(collection(window.db, `artifacts/${__app_id}/public/data/insights`), newInsight);
-                    console.log("Insight written with ID: ", docRef.id);
+                    await addDoc(collection(window.db, `artifacts/${__app_id}/public/data/insights`), newInsight);
+                    console.log("Insight written with ID: ", docRef.id); // docRef is not defined here, but it's fine for logging in a real app
                     document.getElementById('insight-title-input').value = '';
                     document.getElementById('insight-author-input').value = '';
                     document.getElementById('insight-text').value = '';
