@@ -776,7 +776,7 @@
         }
         @media screen and (max-width: 600px) {
             #hero h1{font-size:2.4rem} #hero p{font-size:1rem} .section h2{font-size:1.8rem}
-            .section{padding:25px;margin:30px 0} .profile-img{width:140px;height:140px;margin:-70px auto 20px auto}
+            .section{padding:25px;margin:30px 0} .profile-img{width:140px;height:140px;margin:0 auto 20px auto}
             .insight-actions button{padding:8px 14px;font-size:0.85rem}
             .create-insight,.insight-post{padding:15px}
             #post-insight-btn{padding:10px 20px;font-size:0.9rem}
@@ -1669,11 +1669,11 @@
                 renderer.setSize(heroSection.clientWidth, heroSection.clientHeight);
             });
             (function animate() {
-                requestAnimationFrame(animate);
-                if (dodecahedron) { dodecahedron.rotation.x+=0.005; dodecahedron.rotation.y+=0.005; }
+                requestAnimationFramdodecahedron.rotation.x+=0.005; dodecahedron.rotation.y+=0.005; }
                 renderer.render(scene, camera);
             })();
-        }
+        }e(animate);
+                if (dodecahedron) { 
     </script>
 </body>
 </html>
