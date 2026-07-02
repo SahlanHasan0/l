@@ -1669,11 +1669,11 @@
                 renderer.setSize(heroSection.clientWidth, heroSection.clientHeight);
             });
             (function animate() {
-                requestAnimationFramdodecahedron.rotation.x+=0.005; dodecahedron.rotation.y+=0.005; }
+                requestAnimationFrame(animate);
+                if (dodecahedron) { dodecahedron.rotation.x+=0.005; dodecahedron.rotation.y+=0.005; }
                 renderer.render(scene, camera);
             })();
-        }e(animate);
-                if (dodecahedron) { 
+        }
     </script>
 </body>
 </html>
